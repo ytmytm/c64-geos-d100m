@@ -1,0 +1,361 @@
+;13.09.1997 ;zrobic jeszcze dwie wersje
+;14.09.1997 ;w dwoch rozdzielczosciach
+;26.10.1997
+
+;02.06.1999 ;wersja serial
+
+;by Maciej 'YTM/Alliance' Witkowiak
+
+loadw    .macro
+         lda #<\1
+         sta \2
+         lda #>\1
+         sta \2+1
+         .endm
+
+         *= $7902
+
+mwek     = $02
+swek     = $03
+
+prout    = $ffa8
+
+         ;jmp init4print
+         .byte $79
+         jmp startpr
+         jmp printline
+         jmp stoppr
+         jmp getdimensions
+         jmp printascii
+         jmp startascii
+         jmp setnlq
+
+         .null "d-100m"
+;---------------------------------------
+init4print
+         #loadw $851e,2
+         #loadw merk,4
+         #loadw 420,6
+         jsr $c17e
+         #loadw param,mwek
+         jsr $c256
+         lda mwek
+         cmp #4
+         beq niehi
+         lda #"l"
+         sta hi
+         lda #<(640*2)
+         sta ilosc
+         lda #>(640*2)
+         sta ilosc+1
+         lda #$20
+         sta twice
+         jmp endin
+
+niehi    lda #"k"
+         sta hi
+         lda #<640
+         sta ilosc
+         lda #>640
+         sta ilosc+1
+         lda #$fc
+         sta twice
+
+endin    #loadw merk,2
+         #loadw $851e,4
+         #loadw 420,6
+         jsr $c17e
+         ldx #0
+         rts
+
+param    .byte $01
+         .byte 32+8
+         .byte 127+8
+         .word 64
+         .word 255
+
+         .byte 11,20,20
+         .word txt
+         .byte 3,1,72
+         .byte 4,17,72
+         .byte 0
+
+txt      .byte 24
+         .text "high quality ?"
+         .byte 27,0
+;---------------------------------------
+stoppr   lda stat
+         beq nieasci
+         jsr open
+         lda #13
+         jsr prout
+         jmp close
+nieasci  jmp checkbuf
+;---------------------------------------
+startpr  lda #0
+         sta stat
+         jmp allstart
+;---------------------------------------
+startascii lda #1
+         sta stat
+allstart jsr start
+         txa
+         bne safault
+         jsr sendinit
+         ldx #0
+safault  rts
+;---------------------------------------
+sendinit jsr open
+         ldx #0
+sndinlp  lda inistring,x
+         jsr prout
+         inx
+         cpx #insend-inistring
+         bne sndinlp
+         jsr close
+         rts
+;---------------------------------------
+start    lda #0
+         sta $90
+         jsr open
+         lda $90
+         tax
+         bne fault
+         jsr close
+         ldx #0
+         rts
+fault    jsr close
+         ldx #$80
+         rts
+;---------------------------------------
+setnlq   jsr open
+         lda #27
+         jsr prout
+         lda #120
+         jsr prout
+         lda #1
+         jsr prout
+         jmp close
+;---------------------------------------
+printline jsr open
+         lda mwek
+         pha
+         lda swek
+         pha
+         jsr copybuf
+         jsr drwiersz
+         pla
+         sta swek
+         pla
+         sta mwek
+         jsr close
+         rts
+;---------------------------------------
+printascii
+         jsr open
+         ldy #0
+praslp   lda (mwek),y
+         beq prasend
+         jsr prout
+         inc mwek
+         bne praslp
+         inc swek
+         jmp praslp
+prasend  jsr close
+         rts
+;---------------------------------------
+open     lda #4
+         jsr $c2b0
+         jsr $c25c
+         lda #4
+         jsr $ffb1
+         lda #$67
+         jmp $ff93
+;---------------------------------------
+close    jsr $ffae
+         jsr $c25f
+         ldx #0
+         rts
+;---------------------------------------
+getdimensions
+         lda #0
+         ldx #80
+         ldy #99
+         rts
+;---------------------------------------
+drwiersz
+         jsr check0buf
+         txa
+         beq linefeed
+
+         ldx #0
+drwlp    lda rozkaz,x
+         jsr prout
+         inx
+         cpx #rozend-rozkaz
+         bne drwlp
+         lda #0
+         sta kol
+drwlp1   jsr readmem
+         jsr prchr
+         inc kol
+         lda kol
+         cmp #80
+         bne drwlp1
+linefeed lda #13
+         jsr prout
+         rts
+;---------------------------------------
+readmem  ldy #0
+loop2    lda (mwek),y
+         sta tabelka,y
+         iny
+         cpy #8
+         bne loop2
+         lda mwek
+         clc
+         adc #8
+         sta mwek
+         lda swek
+         adc #0
+         sta swek
+         rts
+;---------------------------------------
+prchr    lda #0
+         sta znak
+         ldy #0
+loop3    ldx #0
+         stx znak
+loop4    lda tabelka,x
+         clc
+         asl a
+         sta tabelka,x
+         rol znak
+         inx
+         cpx #8
+         bne loop4
+         lda znak
+         jsr prout
+twice    jsr prout
+         iny
+         cpy #8
+         bne loop3
+         rts
+;---------------------------------------
+copybuf  ldy #0
+         lda swek
+         pha
+         lda 5
+         pha
+colop1   lda (mwek),y
+         sta (4),y
+         iny
+         bne colop1
+         inc swek
+         inc 5
+colop2   lda (mwek),y
+         sta (4),y
+         iny
+         bne colop2
+         inc swek
+         inc 5
+colop3   lda (mwek),y
+         sta (4),y
+         iny
+         cpy #$80
+         bne colop3
+         pla
+         sta 5
+         pla
+         sta swek
+         rts
+;---------------------------------------
+check0buf ldy #0
+         lda swek
+         pha
+c0lop1   lda (mwek),y
+         bne c0fault
+         iny
+         bne c0lop1
+         inc swek
+         inc 5
+c0lop2   lda (mwek),y
+         bne c0fault
+         iny
+         bne c0lop2
+         inc swek
+         inc 5
+c0lop3   lda (mwek),y
+         bne c0fault
+         iny
+         cpy #$80
+         bne c0lop3
+         pla
+         sta swek
+         ldx #0
+         rts
+
+c0fault  pla
+         sta swek
+         ldx #$01
+         rts
+;---------------------------------------
+checkbuf ldy #0
+         lda swek
+         pha
+         lda 5
+         pha
+chlop1   lda (mwek),y
+         cmp (4),y
+         bne cfault
+         iny
+         bne chlop1
+         inc swek
+         inc 5
+chlop2   lda (mwek),y
+         cmp (4),y
+         bne cfault
+         iny
+         bne chlop2
+         inc swek
+         inc 5
+chlop3   lda (mwek),y
+         cmp (4),y
+         bne cfault
+         iny
+         cpy #$80
+         bne chlop3
+         pla
+         sta 5
+         pla
+         sta swek
+         rts
+
+cfault   pla
+         sta 5
+         pla
+         sta swek
+         jmp printline
+;---------------------------------------
+stat     .byte 0
+kol      .byte 0
+
+wiersz   .byte 0
+
+znak     .byte 0
+
+inistring .byte 27,"@",27,"8"
+insend
+
+rozkaz   .byte 27,"3",21
+         ;gestosc 1/9 cala
+
+         .byte 27   ;tryb graficzny
+hi       .text "k"
+ilosc    .word 640
+rozend
+
+tabelka  .byte 0,0,0,0,0,0,0,0
+
+merk
+
